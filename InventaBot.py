@@ -57,10 +57,46 @@ def check_and_set_date(message):
         today = datetime.now().strftime("%d.%m.%Y")
         row_1 = sheet.row_values(1)
 
+        # Проверяем, есть ли сегодняшняя дата в первой строке
         if today in row_1:
             selected_column = row_1.index(today) + 1
         else:
-            next_empty_column = row_1.index("") + 1 if "" in row_1 else len(row_1) + 1
+            # Получаем все значения первой строки (включая пустые)
+            # Для этого получаем данные из достаточно большого диапазона
+            try:
+                # Пробуем получить первые 200 столбцов
+                all_row_1 = sheet.get('A1:GR1')[0]  # GR - это 200-й столбец
+            except:
+                # Если не получается, используем row_values
+                all_row_1 = row_1
+
+            # Ищем пустую ячейку в первой строке
+            next_empty_column = None
+            for i, cell in enumerate(all_row_1, start=1):
+                if cell == '' or cell is None:
+                    next_empty_column = i
+                    break
+
+            # Если пустых ячеек нет, добавляем новый столбец в конец
+            if next_empty_column is None:
+                # Определяем текущее количество столбцов
+                col_count = len(all_row_1)
+                next_empty_column = col_count + 1
+
+                # ПРАВИЛЬНЫЙ СПОСОБ: добавляем один столбец в конец
+                try:
+                    # Пробуем добавить столбец через add_cols
+                    sheet.add_cols(1)
+                except Exception as add_cols_error:
+                    print(f"Ошибка при добавлении столбца: {add_cols_error}")
+                    # Альтернативный способ через insert_cols
+                    try:
+                        # Вставляем столбец перед текущей последней позицией
+                        sheet.insert_cols([[]], col_count)
+                    except Exception as insert_error:
+                        bot.send_message(message.chat.id, f"Не удалось добавить столбец: {insert_error}")
+                        return
+
             sheet.update_cell(1, next_empty_column, today)
             format_cell(gspread.utils.rowcol_to_a1(1, next_empty_column), {"red": 1, "green": 1, "blue": 1})
             align_column_center(next_empty_column)
@@ -73,7 +109,7 @@ def check_and_set_date(message):
 
         bot.send_message(
             message.chat.id,
-            f"Инвентаризация {today} {'уже существует' if today in row_1 else 'ещё не существует'}. Хотите продолжить?",
+            f"Инвентаризация {today} {'уже существует' if today in row_1 else 'создана'}. Хотите продолжить?",
             reply_markup=markup
         )
 
@@ -91,7 +127,16 @@ def check_and_set_date_silent():
         if today in row_1:
             selected_column = row_1.index(today) + 1
         else:
-            next_empty_column = row_1.index("") + 1 if "" in row_1 else len(row_1) + 1
+            if "" in row_1:
+                next_empty_column = row_1.index("") + 1
+            else:
+                # Добавляем новый столбец
+                next_empty_column = len(row_1) + 1
+                sheet.insert_cols([[]], next_empty_column)  # ПРАВИЛЬНЫЙ СПОСОБ
+
+                # Обновляем row_1 после добавления столбца
+                row_1 = sheet.row_values(1)
+
             sheet.update_cell(1, next_empty_column, today)
             format_cell(gspread.utils.rowcol_to_a1(1, next_empty_column), {"red": 1, "green": 1, "blue": 1})
             align_column_center(next_empty_column)
