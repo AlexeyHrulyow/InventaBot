@@ -1,0 +1,25 @@
+# Secrets
+*.json
+*.key
+*.pem
+*.env
+credentials/
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Other
+.DS_Store
+Thumbs.db
