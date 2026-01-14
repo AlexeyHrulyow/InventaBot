@@ -51,7 +51,6 @@ def ensure_reserve_columns():
         if empty_after < RESERVE_COLUMNS_COUNT:
             cols_to_add = RESERVE_COLUMNS_COUNT - empty_after
             sheet.add_cols(cols_to_add)
-            print(f"Добавлено {cols_to_add} резервных столбцов")
 
             # Форматируем добавленные столбцы в белый цвет
             for i in range(cols_to_add):
@@ -273,6 +272,179 @@ def check_and_set_date_silent():
 
     except Exception as e:
         print(f"Ошибка при установке даты: {e}")
+
+
+def manage_column_visibility():
+    """Управляет видимостью столбцов: оставляет видимыми столбцы A-E и последние 5 инвентаризаций"""
+    try:
+        # Получаем все значения первой строки
+        try:
+            values = sheet.get('A1:ZZ1')
+            if values:
+                all_row_1 = values[0]
+            else:
+                all_row_1 = []
+        except:
+            all_row_1 = sheet.row_values(1)
+
+        # Находим все заполненные столбцы (где есть дата)
+        filled_columns = []
+        for i, cell in enumerate(all_row_1, start=1):
+            if cell and cell != '':
+                filled_columns.append(i)
+
+        if len(filled_columns) <= 5:  # Если заполненных столбцов меньше или равно 5, ничего не скрываем
+            return
+
+        # Определяем какие столбцы должны быть видимыми
+        # Столбцы A-E (1-5) всегда видимы
+        # Последние 5 заполненных столбцов тоже видимы
+        visible_columns = list(range(1, 6))  # Столбцы A-E
+
+        # Добавляем последние 5 заполненных столбцов
+        last_filled = filled_columns[-5:] if len(filled_columns) >= 5 else filled_columns
+        visible_columns.extend(last_filled)
+
+        # Убираем дубликаты (на случай если какие-то из последних 5 попадают в A-E)
+        visible_columns = list(set(visible_columns))
+
+        # Определяем все столбцы которые нужно скрыть (все остальные)
+        # Берем максимальный номер столбца + резервные столбцы
+        max_column = max(len(all_row_1), filled_columns[-1] if filled_columns else 5)
+
+        columns_to_hide = []
+        for col in range(6, max_column + 1):  # Начинаем с F (6 столбец)
+            if col not in visible_columns:
+                columns_to_hide.append(col)
+
+        if not columns_to_hide:
+            return
+
+        # Группируем скрываемые столбцы в диапазоны для уменьшения количества запросов
+        hidden_ranges = []
+        start = columns_to_hide[0]
+        end = columns_to_hide[0]
+
+        for col in columns_to_hide[1:]:
+            if col == end + 1:
+                end = col
+            else:
+                hidden_ranges.append((start, end))
+                start = col
+                end = col
+        hidden_ranges.append((start, end))
+
+        # Создаем запросы на скрытие столбцов
+        requests = []
+        for start_col, end_col in hidden_ranges:
+            requests.append({
+                "updateDimensionProperties": {
+                    "range": {
+                        "sheetId": sheet.id,
+                        "dimension": "COLUMNS",
+                        "startIndex": start_col - 1,  # API использует 0-based индексы
+                        "endIndex": end_col  # endIndex не включается
+                    },
+                    "properties": {
+                        "hiddenByUser": True
+                    },
+                    "fields": "hiddenByUser"
+                }
+            })
+
+        # Выполняем все запросы одним batch_update
+        if requests:
+            sheet.spreadsheet.batch_update({'requests': requests})
+            print(f"Скрыто {len(columns_to_hide)} столбцов в {len(hidden_ranges)} диапазонах")
+
+    except Exception as e:
+        print(f"Ошибка при управлении видимостью столбцов: {e}")
+
+
+def show_hidden_columns():
+    """Показывает все скрытые столбцы (для отладки или ручного управления)"""
+    try:
+        # Получаем все значения первой строки
+        try:
+            values = sheet.get('A1:ZZ1')
+            if values:
+                all_row_1 = values[0]
+            else:
+                all_row_1 = []
+        except:
+            all_row_1 = sheet.row_values(1)
+
+        max_column = len(all_row_1)
+
+        # Создаем запрос на показ всех столбцов
+        requests = [{
+            "updateDimensionProperties": {
+                "range": {
+                    "sheetId": sheet.id,
+                    "dimension": "COLUMNS",
+                    "startIndex": 5,  # Начинаем с F столбца (индекс 5, т.к. 0-based)
+                    "endIndex": max_column
+                },
+                "properties": {
+                    "hiddenByUser": False
+                },
+                "fields": "hiddenByUser"
+            }
+        }]
+
+        sheet.spreadsheet.batch_update({'requests': requests})
+        print("Все столбцы показаны")
+
+    except Exception as e:
+        print(f"Ошибка при показе скрытых столбцов: {e}")
+
+
+def delete_old_columns():
+    """Удаляет старые столбцы, оставляя только последние N инвентаризаций"""
+    try:
+        # Получаем все значения первой строки
+        try:
+            values = sheet.get('A1:ZZ1')
+            if values:
+                all_row_1 = values[0]
+            else:
+                all_row_1 = []
+        except:
+            all_row_1 = sheet.row_values(1)
+
+        # Находим все заполненные столбцы (где есть дата)
+        filled_columns = []
+        for i, cell in enumerate(all_row_1, start=1):
+            if cell and cell != '':
+                filled_columns.append(i)
+
+        if len(filled_columns) <= 10:  # Оставляем последние 10 инвентаризаций + резервные
+            return
+
+        # Определяем сколько столбцов нужно удалить (все что до filled_columns[-10])
+        columns_to_keep = 10  # Оставляем последние 10 инвентаризаций
+        delete_up_to = filled_columns[-columns_to_keep] - 1  # Удаляем все что до этого столбца
+
+        if delete_up_to <= 5:  # Не удаляем столбцы A-E
+            return
+
+        # Создаем запрос на удаление столбцов
+        requests = [{
+            "deleteDimension": {
+                "range": {
+                    "sheetId": sheet.id,
+                    "dimension": "COLUMNS",
+                    "startIndex": 5,  # Начинаем с F столбца (после A-E)
+                    "endIndex": delete_up_to  # Удаляем до определенного столбца
+                }
+            }
+        }]
+
+        sheet.spreadsheet.batch_update({'requests': requests})
+        print(f"Удалены столбцы с F до {gspread.utils.rowcol_to_a1(1, delete_up_to)}")
+
+    except Exception as e:
+        print(f"Ошибка при удалении старых столбцов: {e}")
 
 
 @bot.message_handler(commands=['start'])
@@ -691,10 +863,47 @@ def generate_order_list(message):
 
         bot.send_message(message.chat.id, order_list, parse_mode="HTML", disable_web_page_preview=True)
 
+        # Управление видимостью столбцов после завершения инвентаризации
+        try:
+            manage_column_visibility()
+        except Exception as e:
+            print(f"Ошибка при управлении видимостью: {e}")
+
         show_menu(message)
 
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка при генерации списка заказов: {e}")
+
+
+# Добавляем команды для ручного управления скрытием/показом столбцов
+@bot.message_handler(commands=['showcolumns'])
+def show_columns_command(message):
+    """Команда для показа всех скрытых столбцов"""
+    try:
+        show_hidden_columns()
+        bot.send_message(message.chat.id, "Все скрытые столбцы показаны")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка: {e}")
+
+
+@bot.message_handler(commands=['hidecolumns'])
+def hide_columns_command(message):
+    """Команда для скрытия старых столбцов"""
+    try:
+        manage_column_visibility()
+        bot.send_message(message.chat.id, "Старые столбцы скрыты")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка: {e}")
+
+
+@bot.message_handler(commands=['cleanup'])
+def cleanup_columns_command(message):
+    """Команда для удаления старых столбцов (использовать с осторожностью!)"""
+    try:
+        delete_old_columns()
+        bot.send_message(message.chat.id, "Старые столбцы удалены")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка: {e}")
 
 
 @bot.message_handler(commands=['secret'])
@@ -772,7 +981,7 @@ def get_leftovers():
     product_map = {
         "трубочки сгущ": "Трубочки сгущёнка",
         "трубочки крем": "Трубочки крем",
-        "эклер": "Эклеры",
+        "эклер": "Эклер",
         "птичье молоко": "Птичье молоко",
         "тирамису": "Десерт тирамису",
         "картошка": "Картошка",
