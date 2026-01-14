@@ -21,6 +21,61 @@ SPREADSHEET_ID = "1--jB0l8igPkwTJeJk-4-K8Ted4--o4lf2iualyB-wM8"
 
 selected_column = None
 
+RESERVE_COLUMNS_COUNT = 3
+
+
+def ensure_reserve_columns():
+    """Создает резервные столбцы при необходимости"""
+    try:
+        # Получаем все данные первой строки (достаточно большое количество)
+        try:
+            values = sheet.get('A1:ZZ1')
+            if values:
+                all_row_1 = values[0]
+            else:
+                all_row_1 = []
+        except:
+            all_row_1 = sheet.row_values(1)
+
+        # Находим последний заполненный столбец
+        last_filled = 0
+        for i, cell in enumerate(all_row_1, start=1):
+            if cell and cell != '':
+                last_filled = i
+
+        # Определяем сколько столбцов после последнего заполненного
+        total_cols = len(all_row_1)
+        empty_after = total_cols - last_filled
+
+        # Если после заполненных меньше 3 пустых столбцов, добавляем недостающие
+        if empty_after < RESERVE_COLUMNS_COUNT:
+            cols_to_add = RESERVE_COLUMNS_COUNT - empty_after
+            sheet.add_cols(cols_to_add)
+            print(f"Добавлено {cols_to_add} резервных столбцов")
+
+            # Форматируем добавленные столбцы в белый цвет
+            for i in range(cols_to_add):
+                col_index = total_cols + i + 1
+                format_column_white(col_index)
+
+            return True
+        return False
+    except Exception as e:
+        print(f"Ошибка при создании резервных столбцов: {e}")
+        return False
+
+
+def format_column_white(column_index):
+    """Форматирует весь столбец в белый цвет"""
+    try:
+        # Форматируем диапазон от 1 до 200 строк (можно изменить при необходимости)
+        column_range = f"{gspread.utils.rowcol_to_a1(1, column_index)}:{gspread.utils.rowcol_to_a1(200, column_index)}"
+        sheet.format(column_range, {
+            "backgroundColor": {"red": 1, "green": 1, "blue": 1}
+        })
+    except Exception as e:
+        print(f"Ошибка при форматировании столбца {column_index} в белый: {e}")
+
 
 def format_cell(cell_range, color):
     sheet.format(
@@ -55,51 +110,77 @@ def check_and_set_date(message):
 
     try:
         today = datetime.now().strftime("%d.%m.%Y")
-        row_1 = sheet.row_values(1)
+
+        # Получаем все данные первой строки
+        try:
+            values = sheet.get('A1:ZZ1')
+            if values:
+                all_row_1 = values[0]
+            else:
+                all_row_1 = []
+        except:
+            all_row_1 = sheet.row_values(1)
 
         # Проверяем, есть ли сегодняшняя дата в первой строке
-        if today in row_1:
-            selected_column = row_1.index(today) + 1
+        if today in all_row_1:
+            selected_column = all_row_1.index(today) + 1
         else:
-            # Получаем все значения первой строки (включая пустые)
-            # Для этого получаем данные из достаточно большого диапазона
-            try:
-                # Пробуем получить первые 200 столбцов
-                all_row_1 = sheet.get('A1:GR1')[0]  # GR - это 200-й столбец
-            except:
-                # Если не получается, используем row_values
-                all_row_1 = row_1
-
-            # Ищем пустую ячейку в первой строке
-            next_empty_column = None
+            # Находим последний заполненный столбец
+            last_filled = 0
             for i, cell in enumerate(all_row_1, start=1):
-                if cell == '' or cell is None:
-                    next_empty_column = i
-                    break
+                if cell and cell != '':
+                    last_filled = i
 
-            # Если пустых ячеек нет, добавляем новый столбец в конец
-            if next_empty_column is None:
-                # Определяем текущее количество столбцов
-                col_count = len(all_row_1)
-                next_empty_column = col_count + 1
+            # Определяем сколько столбцов после последнего заполненного
+            total_cols = len(all_row_1)
+            empty_after = total_cols - last_filled
 
-                # ПРАВИЛЬНЫЙ СПОСОБ: добавляем один столбец в конец
+            # Если после заполненных есть пустые столбцы
+            if empty_after > 0:
+                # Используем первый пустой столбец ПОСЛЕ заполненных
+                next_empty_column = last_filled + 1
+            else:
+                # Если после заполненных нет пустых столбцов
+                # Создаем резервные столбцы
+                ensure_reserve_columns()
+
+                # Обновляем данные после создания столбцов
                 try:
-                    # Пробуем добавить столбец через add_cols
-                    sheet.add_cols(1)
-                except Exception as add_cols_error:
-                    print(f"Ошибка при добавлении столбца: {add_cols_error}")
-                    # Альтернативный способ через insert_cols
-                    try:
-                        # Вставляем столбец перед текущей последней позицией
-                        sheet.insert_cols([[]], col_count)
-                    except Exception as insert_error:
-                        bot.send_message(message.chat.id, f"Не удалось добавить столбец: {insert_error}")
-                        return
+                    values = sheet.get('A1:ZZ1')
+                    if values:
+                        all_row_1 = values[0]
+                    else:
+                        all_row_1 = []
+                except:
+                    all_row_1 = sheet.row_values(1)
 
+                # Пересчитываем
+                last_filled = 0
+                for i, cell in enumerate(all_row_1, start=1):
+                    if cell and cell != '':
+                        last_filled = i
+
+                total_cols = len(all_row_1)
+                empty_after = total_cols - last_filled
+
+                # Теперь должен быть хотя бы один пустой столбец
+                if empty_after > 0:
+                    next_empty_column = last_filled + 1
+                else:
+                    # На всякий случай, если что-то пошло не так
+                    # Создаем один столбец
+                    sheet.add_cols(1)
+                    next_empty_column = total_cols + 1
+
+            # Записываем дату
             sheet.update_cell(1, next_empty_column, today)
+
+            # Форматируем ячейку с датой
             format_cell(gspread.utils.rowcol_to_a1(1, next_empty_column), {"red": 1, "green": 1, "blue": 1})
+
+            # Выравниваем весь столбец
             align_column_center(next_empty_column)
+
             selected_column = next_empty_column
 
         markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
@@ -109,7 +190,7 @@ def check_and_set_date(message):
 
         bot.send_message(
             message.chat.id,
-            f"Инвентаризация {today} {'уже существует' if today in row_1 else 'создана'}. Хотите продолжить?",
+            f"Инвентаризация {today} {'уже существует' if today in all_row_1 else 'создана'}. Хотите продолжить?",
             reply_markup=markup
         )
 
@@ -122,24 +203,72 @@ def check_and_set_date_silent():
 
     try:
         today = datetime.now().strftime("%d.%m.%Y")
-        row_1 = sheet.row_values(1)
 
-        if today in row_1:
-            selected_column = row_1.index(today) + 1
-        else:
-            if "" in row_1:
-                next_empty_column = row_1.index("") + 1
+        # Получаем все данные первой строки
+        try:
+            values = sheet.get('A1:ZZ1')
+            if values:
+                all_row_1 = values[0]
             else:
-                # Добавляем новый столбец
-                next_empty_column = len(row_1) + 1
-                sheet.insert_cols([[]], next_empty_column)  # ПРАВИЛЬНЫЙ СПОСОБ
+                all_row_1 = []
+        except:
+            all_row_1 = sheet.row_values(1)
 
-                # Обновляем row_1 после добавления столбца
-                row_1 = sheet.row_values(1)
+        if today in all_row_1:
+            selected_column = all_row_1.index(today) + 1
+        else:
+            # Находим последний заполненный столбец
+            last_filled = 0
+            for i, cell in enumerate(all_row_1, start=1):
+                if cell and cell != '':
+                    last_filled = i
 
+            # Определяем сколько столбцов после последнего заполненного
+            total_cols = len(all_row_1)
+            empty_after = total_cols - last_filled
+
+            # Если после заполненных есть пустые столбцы
+            if empty_after > 0:
+                next_empty_column = last_filled + 1
+            else:
+                # Если после заполненных нет пустых столбцов
+                # Создаем резервные столбцы
+                ensure_reserve_columns()
+
+                # Обновляем данные после создания столбцов
+                try:
+                    values = sheet.get('A1:ZZ1')
+                    if values:
+                        all_row_1 = values[0]
+                    else:
+                        all_row_1 = []
+                except:
+                    all_row_1 = sheet.row_values(1)
+
+                # Пересчитываем
+                last_filled = 0
+                for i, cell in enumerate(all_row_1, start=1):
+                    if cell and cell != '':
+                        last_filled = i
+
+                total_cols = len(all_row_1)
+                empty_after = total_cols - last_filled
+
+                if empty_after > 0:
+                    next_empty_column = last_filled + 1
+                else:
+                    sheet.add_cols(1)
+                    next_empty_column = total_cols + 1
+
+            # Записываем дату
             sheet.update_cell(1, next_empty_column, today)
+
+            # Форматируем ячейку с датой
             format_cell(gspread.utils.rowcol_to_a1(1, next_empty_column), {"red": 1, "green": 1, "blue": 1})
+
+            # Выравниваем весь столбец
             align_column_center(next_empty_column)
+
             selected_column = next_empty_column
 
     except Exception as e:
