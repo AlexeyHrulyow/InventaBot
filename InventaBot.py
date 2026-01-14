@@ -355,7 +355,6 @@ def manage_column_visibility():
         # Выполняем все запросы одним batch_update
         if requests:
             sheet.spreadsheet.batch_update({'requests': requests})
-            print(f"Скрыто {len(columns_to_hide)} столбцов в {len(hidden_ranges)} диапазонах")
 
     except Exception as e:
         print(f"Ошибка при управлении видимостью столбцов: {e}")
