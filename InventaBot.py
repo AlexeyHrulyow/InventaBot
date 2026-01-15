@@ -1,3 +1,43 @@
+import os
+import sys
+import logging
+import traceback
+
+# Настройка логирования
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('inventory_bot.log'),
+        logging.StreamHandler()
+    ]
+)
+
+
+# Декоратор для обработки ошибок Google API
+def handle_google_api_errors(func):
+    def wrapper(*args, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            error_msg = f"Google API Error in {func.__name__}: {str(e)}"
+            logging.error(error_msg)
+
+            # Если это ошибка 429 (лимит запросов), ждем
+            if "429" in str(e) or "quota" in str(e).lower():
+                logging.info("Превышен лимит запросов. Ждем 60 секунд...")
+                import time
+                time.sleep(60)
+
+            # Пробуем выполнить функцию снова
+            try:
+                return func(*args, **kwargs)
+            except:
+                raise
+
+    return wrapper
+
+
 import telebot
 import gspread
 from google.oauth2.service_account import Credentials
