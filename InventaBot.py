@@ -2,13 +2,19 @@ import os
 import sys
 import logging
 import traceback
+import telebot
+import gspread
+from google.oauth2.service_account import Credentials
+from telebot import types
+from datetime import datetime
+import re
+import html
 
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('inventory_bot.log'),
         logging.StreamHandler()
     ]
 )
@@ -38,13 +44,6 @@ def handle_google_api_errors(func):
     return wrapper
 
 
-import telebot
-import gspread
-from google.oauth2.service_account import Credentials
-from telebot import types
-from datetime import datetime
-import re
-
 TOKEN = "7568162485:AAFR6H3KwBUTwH_Nkq5SkhtkXCcggT8pynA"
 bot = telebot.TeleBot(TOKEN)
 
@@ -61,59 +60,8 @@ SPREADSHEET_ID = "1--jB0l8igPkwTJeJk-4-K8Ted4--o4lf2iualyB-wM8"
 
 selected_column = None
 
-RESERVE_COLUMNS_COUNT = 3
-
-
-def ensure_reserve_columns():
-    """Создает резервные столбцы при необходимости"""
-    try:
-        # Получаем все данные первой строки (достаточно большое количество)
-        try:
-            values = sheet.get('A1:ZZ1')
-            if values:
-                all_row_1 = values[0]
-            else:
-                all_row_1 = []
-        except:
-            all_row_1 = sheet.row_values(1)
-
-        # Находим последний заполненный столбец
-        last_filled = 0
-        for i, cell in enumerate(all_row_1, start=1):
-            if cell and cell != '':
-                last_filled = i
-
-        # Определяем сколько столбцов после последнего заполненного
-        total_cols = len(all_row_1)
-        empty_after = total_cols - last_filled
-
-        # Если после заполненных меньше 3 пустых столбцов, добавляем недостающие
-        if empty_after < RESERVE_COLUMNS_COUNT:
-            cols_to_add = RESERVE_COLUMNS_COUNT - empty_after
-            sheet.add_cols(cols_to_add)
-
-            # Форматируем добавленные столбцы в белый цвет
-            for i in range(cols_to_add):
-                col_index = total_cols + i + 1
-                format_column_white(col_index)
-
-            return True
-        return False
-    except Exception as e:
-        print(f"Ошибка при создании резервных столбцов: {e}")
-        return False
-
-
-def format_column_white(column_index):
-    """Форматирует весь столбец в белый цвет"""
-    try:
-        # Форматируем диапазон от 1 до 200 строк (можно изменить при необходимости)
-        column_range = f"{gspread.utils.rowcol_to_a1(1, column_index)}:{gspread.utils.rowcol_to_a1(200, column_index)}"
-        sheet.format(column_range, {
-            "backgroundColor": {"red": 1, "green": 1, "blue": 1}
-        })
-    except Exception as e:
-        print(f"Ошибка при форматировании столбца {column_index} в белый: {e}")
+# Переменные для управления состоянием
+user_states = {}
 
 
 def format_cell(cell_range, color):
@@ -124,6 +72,17 @@ def format_cell(cell_range, color):
             "horizontalAlignment": "CENTER",
         }
     )
+
+
+def format_column_white(column_index):
+    """Форматирует весь столбец в белый цвет"""
+    try:
+        column_range = f"{gspread.utils.rowcol_to_a1(1, column_index)}:{gspread.utils.rowcol_to_a1(200, column_index)}"
+        sheet.format(column_range, {
+            "backgroundColor": {"red": 1, "green": 1, "blue": 1}
+        })
+    except Exception as e:
+        logging.error(f"Ошибка при форматировании столбца {column_index} в белый: {e}")
 
 
 def align_column_center(column):
@@ -144,9 +103,8 @@ def extract_number(value):
     return float(match.group(1)) if match else None
 
 
-def check_and_set_date(message):
-    global selected_column
-
+def check_today_date_exists():
+    """Проверяет, существует ли сегодняшняя дата в таблице, не создавая ее"""
     try:
         today = datetime.now().strftime("%d.%m.%Y")
 
@@ -162,84 +120,39 @@ def check_and_set_date(message):
 
         # Проверяем, есть ли сегодняшняя дата в первой строке
         if today in all_row_1:
-            selected_column = all_row_1.index(today) + 1
+            column_index = all_row_1.index(today) + 1
+            return True, column_index, all_row_1
         else:
-            # Находим последний заполненный столбец
-            last_filled = 0
-            for i, cell in enumerate(all_row_1, start=1):
-                if cell and cell != '':
-                    last_filled = i
-
-            # Определяем сколько столбцов после последнего заполненного
-            total_cols = len(all_row_1)
-            empty_after = total_cols - last_filled
-
-            # Если после заполненных есть пустые столбцы
-            if empty_after > 0:
-                # Используем первый пустой столбец ПОСЛЕ заполненных
-                next_empty_column = last_filled + 1
-            else:
-                # Если после заполненных нет пустых столбцов
-                # Создаем резервные столбцы
-                ensure_reserve_columns()
-
-                # Обновляем данные после создания столбцов
-                try:
-                    values = sheet.get('A1:ZZ1')
-                    if values:
-                        all_row_1 = values[0]
-                    else:
-                        all_row_1 = []
-                except:
-                    all_row_1 = sheet.row_values(1)
-
-                # Пересчитываем
-                last_filled = 0
-                for i, cell in enumerate(all_row_1, start=1):
-                    if cell and cell != '':
-                        last_filled = i
-
-                total_cols = len(all_row_1)
-                empty_after = total_cols - last_filled
-
-                # Теперь должен быть хотя бы один пустой столбец
-                if empty_after > 0:
-                    next_empty_column = last_filled + 1
-                else:
-                    # На всякий случай, если что-то пошло не так
-                    # Создаем один столбец
-                    sheet.add_cols(1)
-                    next_empty_column = total_cols + 1
-
-            # Записываем дату
-            sheet.update_cell(1, next_empty_column, today)
-
-            # Форматируем ячейку с датой
-            format_cell(gspread.utils.rowcol_to_a1(1, next_empty_column), {"red": 1, "green": 1, "blue": 1})
-
-            # Выравниваем весь столбец
-            align_column_center(next_empty_column)
-
-            selected_column = next_empty_column
-
-        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
-        btn_yes = types.KeyboardButton("Да")
-        btn_no = types.KeyboardButton("Нет")
-        markup.add(btn_yes, btn_no)
-
-        bot.send_message(
-            message.chat.id,
-            f"Инвентаризация {today} {'уже существует' if today in all_row_1 else 'создана'}. Хотите продолжить?",
-            reply_markup=markup
-        )
+            return False, None, all_row_1
 
     except Exception as e:
-        bot.send_message(message.chat.id, f"Ошибка: {e}")
+        logging.error(f"Ошибка при проверке даты: {e}")
+        return False, None, []
 
 
-def check_and_set_date_silent():
-    global selected_column
+def find_empty_column_after_last_filled(all_row_1):
+    """Находит первый пустой столбец после последнего заполненного"""
+    # Находим последний заполненный столбец
+    last_filled = 0
+    for i, cell in enumerate(all_row_1, start=1):
+        if cell and cell != '':
+            last_filled = i
 
+    # Определяем сколько столбцов после последнего заполненного
+    total_cols = len(all_row_1)
+    empty_after = total_cols - last_filled
+
+    # Если после заполненных есть пустые столбцы
+    if empty_after > 0:
+        # Используем первый пустой столбец ПОСЛЕ заполненных
+        return last_filled + 1, total_cols
+    else:
+        # Если после заполненных нет пустых столбцов
+        return total_cols + 1, total_cols
+
+
+def create_today_date_column():
+    """Создает столбец для сегодняшней даты"""
     try:
         today = datetime.now().strftime("%d.%m.%Y")
 
@@ -253,65 +166,155 @@ def check_and_set_date_silent():
         except:
             all_row_1 = sheet.row_values(1)
 
+        # Проверяем, существует ли уже сегодняшняя дата
         if today in all_row_1:
-            selected_column = all_row_1.index(today) + 1
-        else:
-            # Находим последний заполненный столбец
-            last_filled = 0
-            for i, cell in enumerate(all_row_1, start=1):
-                if cell and cell != '':
-                    last_filled = i
+            return all_row_1.index(today) + 1, all_row_1
 
-            # Определяем сколько столбцов после последнего заполненного
-            total_cols = len(all_row_1)
-            empty_after = total_cols - last_filled
+        # Находим место для новой даты
+        next_empty_column, total_cols = find_empty_column_after_last_filled(all_row_1)
 
-            # Если после заполненных есть пустые столбцы
-            if empty_after > 0:
-                next_empty_column = last_filled + 1
-            else:
-                # Если после заполненных нет пустых столбцов
-                # Создаем резервные столбцы
-                ensure_reserve_columns()
+        # Если нужно добавить столбец
+        if next_empty_column > total_cols:
+            # Добавляем только один столбец
+            sheet.add_cols(1)
 
-                # Обновляем данные после создания столбцов
-                try:
-                    values = sheet.get('A1:ZZ1')
-                    if values:
-                        all_row_1 = values[0]
-                    else:
-                        all_row_1 = []
-                except:
-                    all_row_1 = sheet.row_values(1)
+        # Форматируем новый столбец в белый цвет
+        format_column_white(next_empty_column)
 
-                # Пересчитываем
-                last_filled = 0
-                for i, cell in enumerate(all_row_1, start=1):
-                    if cell and cell != '':
-                        last_filled = i
+        # Записываем дату
+        sheet.update_cell(1, next_empty_column, today)
 
-                total_cols = len(all_row_1)
-                empty_after = total_cols - last_filled
+        # Форматируем ячейку с датой
+        format_cell(gspread.utils.rowcol_to_a1(1, next_empty_column), {"red": 1, "green": 1, "blue": 1})
 
-                if empty_after > 0:
-                    next_empty_column = last_filled + 1
-                else:
-                    sheet.add_cols(1)
-                    next_empty_column = total_cols + 1
+        # Выравниваем весь столбец
+        align_column_center(next_empty_column)
 
-            # Записываем дату
-            sheet.update_cell(1, next_empty_column, today)
-
-            # Форматируем ячейку с датой
-            format_cell(gspread.utils.rowcol_to_a1(1, next_empty_column), {"red": 1, "green": 1, "blue": 1})
-
-            # Выравниваем весь столбец
-            align_column_center(next_empty_column)
-
-            selected_column = next_empty_column
+        return next_empty_column, all_row_1
 
     except Exception as e:
-        print(f"Ошибка при установке даты: {e}")
+        logging.error(f"Ошибка при создании столбца с датой: {e}")
+        return None, []
+
+
+def ask_about_inventory(message):
+    """Спрашивает пользователя о начале инвентаризации"""
+    try:
+        today = datetime.now().strftime("%d.%m.%Y")
+
+        # Проверяем существование даты
+        date_exists, column_index, all_row_1 = check_today_date_exists()
+
+        if date_exists:
+            # Дата уже существует
+            markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+            btn_continue = types.KeyboardButton("Продолжить")
+            btn_new = types.KeyboardButton("Новая")
+            btn_cancel = types.KeyboardButton("Отмена")
+            markup.add(btn_continue, btn_new, btn_cancel)
+
+            bot.send_message(
+                message.chat.id,
+                f"Инвентаризация за {today} уже существует. Хотите продолжить заполнение или создать новую?",
+                reply_markup=markup
+            )
+
+            # Сохраняем состояние пользователя
+            user_states[message.chat.id] = {
+                'state': 'ask_inventory_type',
+                'existing_column': column_index
+            }
+        else:
+            # Дата не существует
+            markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+            btn_create = types.KeyboardButton("Создать")
+            btn_cancel = types.KeyboardButton("Отмена")
+            markup.add(btn_create, btn_cancel)
+
+            bot.send_message(
+                message.chat.id,
+                f"Инвентаризация за {today} ещё не существует. Хотите создать новую инвентаризацию?",
+                reply_markup=markup
+            )
+
+            # Сохраняем состояние пользователя
+            user_states[message.chat.id] = {
+                'state': 'ask_create_new'
+            }
+
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка: {e}")
+        show_menu(message)
+
+
+def process_inventory_response(message):
+    """Обрабатывает ответ пользователя о начале инвентаризации"""
+    global selected_column
+
+    chat_id = message.chat.id
+    user_state = user_states.get(chat_id, {})
+    current_state = user_state.get('state')
+
+    if message.text == "Отмена":
+        if chat_id in user_states:
+            del user_states[chat_id]
+        show_menu(message)
+        return
+
+    if current_state == 'ask_inventory_type':
+        if message.text == "Продолжить":
+            # Продолжаем существующую инвентаризацию
+            selected_column = user_state['existing_column']
+            if chat_id in user_states:
+                del user_states[chat_id]
+            bot.send_message(
+                chat_id,
+                "Продолжаем существующую инвентаризацию!",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            start_inventory(message)
+
+        elif message.text == "Новая":
+            # Создаем новую инвентаризацию
+            if chat_id in user_states:
+                del user_states[chat_id]
+            create_and_start_inventory(message)
+
+    elif current_state == 'ask_create_new':
+        if message.text == "Создать":
+            if chat_id in user_states:
+                del user_states[chat_id]
+            create_and_start_inventory(message)
+
+
+def create_and_start_inventory(message):
+    """Создает новую инвентаризацию и начинает заполнение"""
+    global selected_column
+
+    try:
+        # Создаем столбец с сегодняшней датой
+        column_index, all_row_1 = create_today_date_column()
+
+        if column_index:
+            selected_column = column_index
+            today = datetime.now().strftime("%d.%m.%Y")
+            bot.send_message(
+                message.chat.id,
+                f"Создана новая инвентаризация за {today}!",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            start_inventory(message)
+        else:
+            bot.send_message(
+                message.chat.id,
+                "Не удалось создать инвентаризацию. Попробуйте позже.",
+                reply_markup=types.ReplyKeyboardRemove()
+            )
+            show_menu(message)
+
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка при создании инвентаризации: {e}")
+        show_menu(message)
 
 
 def manage_column_visibility():
@@ -333,34 +336,26 @@ def manage_column_visibility():
             if cell and cell != '':
                 filled_columns.append(i)
 
-        if len(filled_columns) <= 5:  # Если заполненных столбцов меньше или равно 5, ничего не скрываем
+        if len(filled_columns) <= 5:
             return
 
         # Определяем какие столбцы должны быть видимыми
-        # Столбцы A-E (1-5) всегда видимы
-        # Последние 5 заполненных столбцов тоже видимы
         visible_columns = list(range(1, 6))  # Столбцы A-E
-
-        # Добавляем последние 5 заполненных столбцов
         last_filled = filled_columns[-5:] if len(filled_columns) >= 5 else filled_columns
         visible_columns.extend(last_filled)
-
-        # Убираем дубликаты (на случай если какие-то из последних 5 попадают в A-E)
         visible_columns = list(set(visible_columns))
 
-        # Определяем все столбцы которые нужно скрыть (все остальные)
-        # Берем максимальный номер столбца + резервные столбцы
+        # Определяем все столбцы которые нужно скрыть
         max_column = max(len(all_row_1), filled_columns[-1] if filled_columns else 5)
-
         columns_to_hide = []
-        for col in range(6, max_column + 1):  # Начинаем с F (6 столбец)
+        for col in range(6, max_column + 1):
             if col not in visible_columns:
                 columns_to_hide.append(col)
 
         if not columns_to_hide:
             return
 
-        # Группируем скрываемые столбцы в диапазоны для уменьшения количества запросов
+        # Группируем скрываемые столбцы в диапазоны
         hidden_ranges = []
         start = columns_to_hide[0]
         end = columns_to_hide[0]
@@ -382,8 +377,8 @@ def manage_column_visibility():
                     "range": {
                         "sheetId": sheet.id,
                         "dimension": "COLUMNS",
-                        "startIndex": start_col - 1,  # API использует 0-based индексы
-                        "endIndex": end_col  # endIndex не включается
+                        "startIndex": start_col - 1,
+                        "endIndex": end_col
                     },
                     "properties": {
                         "hiddenByUser": True
@@ -392,7 +387,6 @@ def manage_column_visibility():
                 }
             })
 
-        # Выполняем все запросы одним batch_update
         if requests:
             sheet.spreadsheet.batch_update({'requests': requests})
 
@@ -421,7 +415,7 @@ def show_hidden_columns():
                 "range": {
                     "sheetId": sheet.id,
                     "dimension": "COLUMNS",
-                    "startIndex": 5,  # Начинаем с F столбца (индекс 5, т.к. 0-based)
+                    "startIndex": 5,
                     "endIndex": max_column
                 },
                 "properties": {
@@ -432,7 +426,6 @@ def show_hidden_columns():
         }]
 
         sheet.spreadsheet.batch_update({'requests': requests})
-        print("Все столбцы показаны")
 
     except Exception as e:
         print(f"Ошибка при показе скрытых столбцов: {e}")
@@ -457,14 +450,14 @@ def delete_old_columns():
             if cell and cell != '':
                 filled_columns.append(i)
 
-        if len(filled_columns) <= 10:  # Оставляем последние 10 инвентаризаций + резервные
+        if len(filled_columns) <= 10:
             return
 
-        # Определяем сколько столбцов нужно удалить (все что до filled_columns[-10])
-        columns_to_keep = 10  # Оставляем последние 10 инвентаризаций
-        delete_up_to = filled_columns[-columns_to_keep] - 1  # Удаляем все что до этого столбца
+        # Определяем сколько столбцов нужно удалить
+        columns_to_keep = 10
+        delete_up_to = filled_columns[-columns_to_keep] - 1
 
-        if delete_up_to <= 5:  # Не удаляем столбцы A-E
+        if delete_up_to <= 5:
             return
 
         # Создаем запрос на удаление столбцов
@@ -473,32 +466,31 @@ def delete_old_columns():
                 "range": {
                     "sheetId": sheet.id,
                     "dimension": "COLUMNS",
-                    "startIndex": 5,  # Начинаем с F столбца (после A-E)
-                    "endIndex": delete_up_to  # Удаляем до определенного столбца
+                    "startIndex": 5,
+                    "endIndex": delete_up_to
                 }
             }
         }]
 
         sheet.spreadsheet.batch_update({'requests': requests})
-        print(f"Удалены столбцы с F до {gspread.utils.rowcol_to_a1(1, delete_up_to)}")
 
     except Exception as e:
         print(f"Ошибка при удалении старых столбцов: {e}")
 
 
 @bot.message_handler(commands=['start'])
-def start(message):
+def start_command(message):
     bot.send_message(message.chat.id, f"Привет, {message.from_user.first_name}!")
     show_menu(message)
 
 
 @bot.message_handler(commands=['menu'])
-def menu(message):
+def menu_command(message):
     show_menu(message)
 
 
 @bot.message_handler(commands=['stop'])
-def stop(message):
+def stop_command(message):
     global selected_column
     selected_column = None
     bot.send_message(message.chat.id, "Заполнение инвентаризации приостановлено, возвращаемся в главное меню...")
@@ -508,7 +500,7 @@ def stop(message):
 def show_menu(message):
     markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
     btn_start_inventory = types.KeyboardButton("Инвента")
-    btn_edit = types.KeyboardButton("Редактировать")  # Новая кнопка
+    btn_edit = types.KeyboardButton("Редактировать")
     btn_table_link = types.KeyboardButton("Ссылка на таблицу")
     btn_help = types.KeyboardButton("Помощь")
     markup.add(btn_start_inventory, btn_edit, btn_table_link, btn_help)
@@ -524,15 +516,6 @@ def show_menu(message):
     )
 
 
-def show_inventory_keyboard(message):
-    markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
-    btn_stop = types.KeyboardButton("Приостановить инвенту")
-    markup.add(btn_stop)
-    bot.send_message(message.chat.id, "Чтобы приостановить инвентаризацию, нажмите или введите 'Приостановить "
-                                      "инвентаризацию'.",
-                     reply_markup=markup)
-
-
 def start_inventory(message):
     global selected_column
 
@@ -541,37 +524,34 @@ def start_inventory(message):
         return
 
     try:
-        product_names = sheet.col_values(1)[3:]  # Читаем названия позиций (столбец A, с 4-й строки)
-        last_row = len(product_names) + 3  # Определяем последнюю заполненную строку
+        product_names = sheet.col_values(1)[3:]
+        last_row = len(product_names) + 3
 
         all_values = sheet.batch_get([
             f"{gspread.utils.rowcol_to_a1(4, selected_column)}:{gspread.utils.rowcol_to_a1(last_row, selected_column)}"
         ])
-        current_values = all_values[0] if all_values else []  # Берём значения из столбца с инвентаризацией
+        current_values = all_values[0] if all_values else []
 
         empty_row = None
-        has_empty_cells = False  # Флаг: есть ли незаполненные ячейки
+        has_empty_cells = False
 
         for i in range(4, last_row + 1):
-            if i - 4 >= len(current_values) or not current_values[i - 4]:  # Если ячейка пуста
+            if i - 4 >= len(current_values) or not current_values[i - 4]:
                 empty_row = i
                 has_empty_cells = True
                 break
 
-        if has_empty_cells and empty_row <= last_row:  # Проверяем, не вылезли ли за пределы таблицы
-            process_product(message, empty_row)  # Начинаем заполнение с первой пустой строки
+        if has_empty_cells and empty_row <= last_row:
+            process_product(message, empty_row)
         else:
             bot.send_message(
                 message.chat.id,
                 "Инвентаризация завершена. Сейчас составлю список заказов."
             )
-            generate_order_list(message)  # Завершаем инвентаризацию и создаём список заказов
+            generate_order_list(message)
 
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка при чтении данных: {e}")
-
-
-import html  # Импортируем для экранирования HTML-символов
 
 
 def process_product(message, row):
@@ -587,7 +567,6 @@ def process_product(message, row):
         prev_value = sheet.cell(row, prev_column).value if prev_column > 0 else "Нет данных"
         description = sheet.cell(row, 3).value or "Нет описания"
 
-        # Экранируем HTML-символы перед отправкой
         product_name = html.escape(product_name)
         prev_value = html.escape(prev_value)
         description = html.escape(description)
@@ -599,7 +578,6 @@ def process_product(message, row):
             f"Описание: {description}"
         )
 
-        # Добавляем кнопку "Приостановить инвенту"
         markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
         btn_stop = types.KeyboardButton("Приостановить инвенту")
         markup.add(btn_stop)
@@ -614,7 +592,16 @@ def process_product(message, row):
 def start_editing(message):
     global selected_column
 
-    check_and_set_date_silent()
+    # Проверяем существование сегодняшней даты
+    date_exists, column_index, all_row_1 = check_today_date_exists()
+
+    if date_exists:
+        selected_column = column_index
+    else:
+        bot.send_message(message.chat.id,
+                         "Ошибка: сегодняшняя инвентаризация не найдена. Сначала создайте инвентаризацию.")
+        show_menu(message)
+        return
 
     if not selected_column:
         bot.send_message(message.chat.id, "Ошибка: столбец для редактирования не найден. Начните сначала.")
@@ -630,7 +617,7 @@ def start_editing(message):
         product_names = [item[0] for item in all_values[0]]
         current_values = [item[0] if item else "Не заполнено" for item in all_values[1]]
 
-        # 📌 Оставляем только заполненные позиции
+        # Оставляем только заполненные позиции
         filled_positions = [
             f"{i}. {name} - {value}"
             for i, (name, value) in enumerate(zip(product_names, current_values), start=4)
@@ -642,7 +629,7 @@ def start_editing(message):
             show_menu(message)
             return
 
-        # 📌 Разбиваем список на группы по 20 элементов
+        # Разбиваем список на группы по 20 элементов
         chunk_size = 20
         for i in range(0, len(filled_positions), chunk_size):
             bot.send_message(
@@ -651,7 +638,7 @@ def start_editing(message):
                 parse_mode='html'
             )
 
-        # 📌 Добавляем кнопку "Назад"
+        # Добавляем кнопку "Назад"
         markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
         btn_back = types.KeyboardButton("Назад")
         markup.add(btn_back)
@@ -747,7 +734,7 @@ def handle_edit_input(message, row, product_name):
         show_menu(message)
         return
 
-    # 📌 Обрабатываем новое значение отдельно, не вызывая handle_user_input()
+    # Обрабатываем новое значение отдельно, не вызывая handle_user_input()
     user_input = message.text.strip()
 
     try:
@@ -757,7 +744,7 @@ def handle_edit_input(message, row, product_name):
         bot.send_message(message.chat.id, f"Ошибка при записи данных: {e}")
         return
 
-    # 📌 После редактирования не начинаем инвентаризацию, а сразу спрашиваем про продолжение
+    # После редактирования не начинаем инвентаризацию, а сразу спрашиваем про продолжение
     markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
     btn_yes = types.KeyboardButton("Да")
     btn_no = types.KeyboardButton("Нет")
@@ -777,14 +764,14 @@ def continue_editing(message):
             message.chat.id,
             "Для редактирования конкретной записи впишите её номер или название. Чтобы вернуться в меню нажмите или "
             "введите 'Назад'.",
-            reply_markup=types.ReplyKeyboardRemove()  # Убираем кнопки
+            reply_markup=types.ReplyKeyboardRemove()
         )
         bot.register_next_step_handler(message, process_edit_input)
     else:
         bot.send_message(
             message.chat.id,
             "Редактирование завершено. Возвращаемся в главное меню...",
-            reply_markup=types.ReplyKeyboardRemove()  # Убираем кнопки
+            reply_markup=types.ReplyKeyboardRemove()
         )
         show_menu(message)
 
@@ -799,12 +786,12 @@ def handle_user_input(message, row, product_name):
     user_input = message.text.strip().lower()
 
     if user_input == "приостановить инвенту":
-        stop(message)  # Вызываем команду /stop
+        stop_command(message)
         return
 
     if user_input in ["много", "есть", "мало", "стоп"]:
-        color = {"red": 0.95, "green": 0.80, "blue": 0.80} if user_input in ["крит", "мало", "стоп"] else \
-               {"red": 0.85, "green": 0.94, "blue": 0.83}
+        color = {"red": 0.95, "green": 0.80, "blue": 0.80} if user_input in ["мало", "стоп"] else \
+            {"red": 0.85, "green": 0.94, "blue": 0.83}
     else:
         number = extract_number(user_input)
         if number is None:
@@ -836,7 +823,6 @@ def handle_user_input(message, row, product_name):
             format_cell(gspread.utils.rowcol_to_a1(row, selected_column or 1), color)
 
         bot.send_message(message.chat.id, f"Значение '{user_input}' успешно записано для {product_name}.")
-
         start_inventory(message)
 
     except Exception as e:
@@ -846,25 +832,25 @@ def handle_user_input(message, row, product_name):
 def generate_order_list(message):
     global selected_column
 
-    non_critical_items = []  # Не крит
-    critical_items = []  # Крит
-    stop_items = []  # Стоп
+    non_critical_items = []
+    critical_items = []
+    stop_items = []
 
     try:
-        today = datetime.now().strftime("%d.%m.%Y")  # Получаем текущую дату
-        last_row = len(sheet.col_values(1))  # Определяем количество строк
+        today = datetime.now().strftime("%d.%m.%Y")
+        last_row = len(sheet.col_values(1))
 
         all_values = sheet.batch_get([
-            f"A4:A{last_row}",  # Названия продуктов
-            f"D4:D{last_row}",  # Не критические значения
-            f"E4:E{last_row}",  # Критические значения
+            f"A4:A{last_row}",
+            f"D4:D{last_row}",
+            f"E4:E{last_row}",
             f"{gspread.utils.rowcol_to_a1(4, selected_column)}:{gspread.utils.rowcol_to_a1(last_row, selected_column)}"
         ])
 
-        product_names = [item[0] for item in all_values[0]]  # Названия
-        non_critical_values = [extract_number(item[0]) if item else float('inf') for item in all_values[1]]  # Не крит
-        critical_values = [extract_number(item[0]) if item else -1 for item in all_values[2]]  # Крит
-        current_values = [item[0] if item else "" for item in all_values[3]]  # Текущие значения
+        product_names = [item[0] for item in all_values[0]]
+        non_critical_values = [extract_number(item[0]) if item else float('inf') for item in all_values[1]]
+        critical_values = [extract_number(item[0]) if item else -1 for item in all_values[2]]
+        current_values = [item[0] if item else "" for item in all_values[3]]
 
         for product_name, non_critical, critical, current in zip(product_names, non_critical_values, critical_values,
                                                                  current_values):
@@ -914,7 +900,7 @@ def generate_order_list(message):
         bot.send_message(message.chat.id, f"Ошибка при генерации списка заказов: {e}")
 
 
-# Добавляем команды для ручного управления скрытием/показом столбцов
+# Команды для ручного управления скрытием/показом столбцов
 @bot.message_handler(commands=['showcolumns'])
 def show_columns_command(message):
     """Команда для показа всех скрытых столбцов"""
@@ -997,21 +983,20 @@ def process_secret_response(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка при составлении списка остатков: {e}")
 
-    show_menu(message)  # Возвращаем пользователя в меню
-
+    show_menu(message)
 
 
 def is_inventory_complete():
     """Проверяет, завершена ли инвентаризация."""
-    product_names = sheet.col_values(1)[3:]  # Названия позиций
-    last_row = len(product_names) + 3  # Определяем последнюю заполненную строку
+    product_names = sheet.col_values(1)[3:]
+    last_row = len(product_names) + 3
 
-    column_values = sheet.col_values(selected_column)[3:last_row]  # Значения инвентаризации
+    column_values = sheet.col_values(selected_column)[3:last_row]
 
     for value in column_values:
-        if not value or str(value).strip() == "":  # Добавляем проверку на None
+        if not value or str(value).strip() == "":
             return False
-    return True  # Если все заполнены
+    return True
 
 
 def get_leftovers():
@@ -1027,11 +1012,11 @@ def get_leftovers():
         "бискотти": "Бискотти"
     }
 
-    product_names = sheet.col_values(1)[3:]  # Читаем названия позиций (столбец A, с 4-й строки)
+    product_names = sheet.col_values(1)[3:]
     last_row = len(product_names) + 3
 
     all_values = sheet.batch_get([
-        f"A4:A{last_row}",  # Названия продуктов
+        f"A4:A{last_row}",
         f"{gspread.utils.rowcol_to_a1(4, selected_column)}:{gspread.utils.rowcol_to_a1(last_row, selected_column)}"
     ])
 
@@ -1054,8 +1039,15 @@ def get_leftovers():
 def handle_buttons(message):
     global selected_column
 
+    chat_id = message.chat.id
+
+    # Обработка ответов на вопросы об инвентаризации
+    if chat_id in user_states:
+        process_inventory_response(message)
+        return
+
     if message.text == "Инвента":
-        check_and_set_date(message)
+        ask_about_inventory(message)
 
     elif message.text == "Редактировать":
         start_editing(message)
@@ -1078,23 +1070,23 @@ def handle_buttons(message):
                                           "здесь такого нет). По всем вопросам лучше лично обратиться к гениальному "
                                           "создателю этого бота.")
 
+    # Старая обработка кнопок "Да"/"Нет" теперь не используется
     elif message.text in ["Да", "Нет"]:
-        if message.text == "Да":
-            bot.send_message(
-                message.chat.id,
-                "Начинаем инвентаризацию!",
-                reply_markup=types.ReplyKeyboardRemove()
-            )
-            start_inventory(message)
-
-        elif message.text == "Нет":
-            bot.send_message(
-                message.chat.id,
-                "Редактирование отменено. Возвращаемся в главное меню...",
-                reply_markup=types.ReplyKeyboardRemove()
-            )
-            show_menu(message)
+        bot.send_message(
+            message.chat.id,
+            "Пожалуйста, используйте новые кнопки: 'Продолжить', 'Новая', 'Создать' или 'Отмена'",
+            reply_markup=types.ReplyKeyboardRemove()
+        )
+        show_menu(message)
 
 
 if __name__ == "__main__":
-    bot.polling(none_stop=True)
+    try:
+        # skip_pending=True пропускает накопленные сообщения, чтобы избежать конфликтов
+        bot.polling(none_stop=True, skip_pending=True, interval=0, timeout=20)
+    except Exception as e:
+        print(f"Ошибка при запуске бота: {e}")
+        # Ждем перед перезапуском
+        import time
+
+        time.sleep(5)
