@@ -1358,11 +1358,16 @@ def handle_edit_choice(message):
     name = names[position_index]
 
     if message.text == "Наименование":
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         bot.send_message(
             chat_id,
             f"Введите новое наименование для позиции '{name}'\n"
-            f"Пример оформления: Стаканы 0.3",
-            reply_markup=types.ReplyKeyboardRemove()
+            f"Пример оформления: Стаканы 0.3\n\n"
+            f"Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
         user_states[chat_id]['state'] = 'manage_positions_edit_name'
         bot.register_next_step_handler(message, handle_edit_name, position_index)
@@ -1379,12 +1384,17 @@ def handle_edit_choice(message):
         else:
             example = 'Считаем количество апельсинов в холодильнике. Формат: 0,5 шт., 3 шт., "стоп".'
 
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         bot.send_message(
             chat_id,
             f"Введите новое описание для позиции '{name}'\n"
             f"Пример оформления: {example}\n"
-            f"Просьба не забывать описывать формат!",
-            reply_markup=types.ReplyKeyboardRemove()
+            f"Просьба не забывать описывать формат!\n\n"
+            f"Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
         user_states[chat_id]['state'] = 'manage_positions_edit_description'
         bot.register_next_step_handler(message, handle_edit_description, position_index)
@@ -1413,6 +1423,11 @@ def handle_edit_choice(message):
 def handle_edit_name(message, position_index):
     """Обработка редактирования наименования"""
     chat_id = message.chat.id
+
+    if message.text == "Отмена":
+        start_edit_position_details(message, position_index)
+        return
+
     new_name = message.text.strip()
 
     if not new_name:
@@ -1441,6 +1456,11 @@ def handle_edit_name(message, position_index):
 def handle_edit_description(message, position_index):
     """Обработка редактирования описания"""
     chat_id = message.chat.id
+
+    if message.text == "Отмена":
+        start_edit_position_details(message, position_index)
+        return
+
     new_description = message.text.strip()
 
     if not new_description:
@@ -1509,12 +1529,17 @@ def handle_edit_values_type(message, position_index):
             show_position_info(message, position_index)
 
     elif message.text == "Считаем":
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         bot.send_message(
             chat_id,
             f"Введите значение 'Не крит' для позиции '{name}'\n"
             f"Формат: '24 л.', '234,8 гр.', '6 рук.'\n"
-            f"Это число, с которого позиция будет записываться в не крит.",
-            reply_markup=types.ReplyKeyboardRemove()
+            f"Это число, с которого позиция будет записываться в не крит.\n\n"
+            f"Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
         user_states[chat_id]['state'] = 'manage_positions_edit_non_crit'
         user_states[chat_id]['edit_position_index'] = position_index
@@ -1524,6 +1549,11 @@ def handle_edit_values_type(message, position_index):
 def handle_edit_non_crit(message, position_index):
     """Обработка редактирования значения 'Не крит'"""
     chat_id = message.chat.id
+
+    if message.text == "Отмена":
+        start_edit_position_details(message, position_index)
+        return
+
     user_input = message.text.strip()
 
     # Извлекаем число из ввода
@@ -1551,12 +1581,17 @@ def handle_edit_non_crit(message, position_index):
 
     name = names[position_index]
 
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    btn_cancel = types.KeyboardButton("Отмена")
+    markup.add(btn_cancel)
+
     bot.send_message(
         chat_id,
         f"Введите значение 'Крит' для позиции '{name}'\n"
         f"Формат: '24 л.', '234,8 гр.', '6 рук.'\n"
-        f"Это число, с которого позиция будет записываться в крит.",
-        reply_markup=types.ReplyKeyboardRemove()
+        f"Это число, с которого позиция будет записываться в крит.\n\n"
+        f"Или нажмите 'Отмена' для возврата.",
+        reply_markup=markup
     )
     user_states[chat_id]['state'] = 'manage_positions_edit_crit'
     bot.register_next_step_handler(message, handle_edit_crit, position_index)
@@ -1565,6 +1600,11 @@ def handle_edit_non_crit(message, position_index):
 def handle_edit_crit(message, position_index):
     """Обработка редактирования значения 'Крит'"""
     chat_id = message.chat.id
+
+    if message.text == "Отмена":
+        start_edit_position_details(message, position_index)
+        return
+
     user_input = message.text.strip()
 
     # Извлекаем число из ввода
@@ -1617,11 +1657,16 @@ def ask_move_position(message, position_index):
 
     name = names[position_index]
 
+    markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    btn_cancel = types.KeyboardButton("Отмена")
+    markup.add(btn_cancel)
+
     bot.send_message(
         chat_id,
         f"Напишите, на какую позицию (номер) переместить '{name}'\n"
-        f"Текущая позиция: {position_index + 1}",
-        reply_markup=types.ReplyKeyboardRemove()
+        f"Текущая позиция: {position_index + 1}\n\n"
+        f"Или нажмите 'Отмена' для возврата.",
+        reply_markup=markup
     )
 
     user_states[chat_id]['state'] = 'manage_positions_move'
@@ -1633,6 +1678,11 @@ def handle_move_position(message):
     """Обработка перемещения позиции"""
     chat_id = message.chat.id
     user_input = message.text.strip()
+
+    if user_input == "Отмена":
+        position_index = user_states[chat_id].get('move_position_index')
+        show_position_info(message, position_index)
+        return
 
     if not user_input.isdigit():
         bot.send_message(chat_id, "Пожалуйста, введите номер позиции (число).")
@@ -1663,8 +1713,19 @@ def handle_move_position(message):
         show_position_info(message, position_index)
         return
 
-    # Преобразуем номер позиции в номер строки
-    new_row = new_position + 3
+    # Исправлено: правильно вычисляем новую строку
+    # Если перемещаем позицию вверх (new_position < position_index + 1)
+    if new_position < position_index + 1:
+        # При перемещении вверх, сначала удаляем, потом вставляем
+        target_row = new_position + 3  # Новая позиция в таблице
+    else:
+        # При перемещении вниз, сначала удаляем, потом вставляем на одну строку выше
+        # потому что после удаления строки все строки ниже смещаются вверх
+        target_row = new_position + 3  # Желаемая новая позиция
+        # Если перемещаем вниз, то после удаления текущей строки, все строки ниже сместятся вверх на 1
+        # Поэтому нужно уменьшить target_row на 1
+        if new_position > position_index + 1:
+            target_row -= 1
 
     try:
         # Получаем данные текущей строки
@@ -1680,15 +1741,11 @@ def handle_move_position(message):
         # Удаляем текущую строку
         sheet.delete_rows(current_row, current_row)
 
-        # Если новая позиция больше текущей, то после удаления строки номера сместились
-        if new_position > position_index + 1:
-            new_row -= 1
-
         # Вставляем новую строку
-        sheet.insert_row([name_value, desc_value, non_crit_value, crit_value], new_row)
+        sheet.insert_row([name_value, desc_value, non_crit_value, crit_value], target_row)
 
         # Очищаем форматирование всей строки (A-D)
-        row_range = f"A{new_row}:D{new_row}"
+        row_range = f"A{target_row}:D{target_row}"
         sheet.format(row_range, {
             "backgroundColor": {"red": 1, "green": 1, "blue": 1},
             "horizontalAlignment": "LEFT"
@@ -1804,14 +1861,19 @@ def handle_add_position_confirm(message):
         return
 
     if message.text == "Да":
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         bot.send_message(
             chat_id,
             "Вводим данные для новой позиции!\n\n"
             "Какую строку займёт позиция? Это может сильно повлиять на удобство заполнения, "
             "допустим, новогодние стаканчики лучше располагать в таблице близко к другим стаканам. "
             "Введите тот номер, под которым хотели бы видеть позицию. "
-            "Не переживайте, если это посреди списка, остальные позиции подвинутся)",
-            reply_markup=types.ReplyKeyboardRemove()
+            "Не переживайте, если это посреди списка, остальные позиции подвинутся)\n\n"
+            "Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
 
         user_states[chat_id]['state'] = 'manage_positions_add_position'
@@ -1824,6 +1886,13 @@ def handle_add_position_step(message):
     chat_id = message.chat.id
     user_state = user_states.get(chat_id, {})
     step_data = user_state.get('new_position_data', {})
+
+    # Проверка на отмену
+    if message.text == "Отмена":
+        if chat_id in user_states:
+            del user_states[chat_id]
+        show_menu(message)
+        return
 
     if 'position_number' not in step_data:
         # Шаг 1: Получение номера позиции
@@ -1842,11 +1911,16 @@ def handle_add_position_step(message):
 
         step_data['position_number'] = position_num
 
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         bot.send_message(
             chat_id,
             "Введите наименование новой позиции\n"
-            "Пример оформления: Стаканы 0.3",
-            reply_markup=types.ReplyKeyboardRemove()
+            "Пример оформления: Стаканы 0.3\n\n"
+            "Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
 
         user_states[chat_id]['new_position_data'] = step_data
@@ -1867,12 +1941,14 @@ def handle_add_position_step(message):
         markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
         btn_count = types.KeyboardButton("Считаем")
         btn_not_count = types.KeyboardButton("Можем не считать")
-        markup.add(btn_count, btn_not_count)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_count, btn_not_count, btn_cancel)
 
         bot.send_message(
             chat_id,
             f"Мы считаем/взвешиваем позицию '{name}', как например, молоко или апельсины, "
-            f"или нам это делать не обязательно, как, например, с трубочками для кофе?",
+            f"или нам это делать не обязательно, как, например, с трубочками для кофе?\n\n"
+            f"Или нажмите 'Отмена' для возврата.",
             reply_markup=markup
         )
 
@@ -1887,13 +1963,18 @@ def handle_add_position_step(message):
             step_data['non_crit'] = float('inf')
             step_data['crit'] = -1
 
+            markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+            btn_cancel = types.KeyboardButton("Отмена")
+            markup.add(btn_cancel)
+
             # Переходим к описанию
             bot.send_message(
                 chat_id,
                 "Введите описание для новой позиции\n"
                 "Пример оформления: Смотрим наличие. Формат строгий: 'есть', 'стоп', 'мало'.\n"
-                "Просьба не забывать описывать формат!",
-                reply_markup=types.ReplyKeyboardRemove()
+                "Просьба не забывать описывать формат!\n\n"
+                "Или нажмите 'Отмена' для возврата.",
+                reply_markup=markup
             )
 
             user_states[chat_id]['new_position_data'] = step_data
@@ -1902,16 +1983,27 @@ def handle_add_position_step(message):
         elif message.text == "Считаем":
             step_data['count_type'] = 'count'
 
+            markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+            btn_cancel = types.KeyboardButton("Отмена")
+            markup.add(btn_cancel)
+
             bot.send_message(
                 chat_id,
                 "Введите значение 'Не крит'\n"
                 "Формат: '24 л.', '234,8 гр.', '6 рук.'\n"
-                "Это число, с которого позиция будет записываться в не крит.",
-                reply_markup=types.ReplyKeyboardRemove()
+                "Это число, с которого позиция будет записываться в не крит.\n\n"
+                "Или нажмите 'Отмена' для возврата.",
+                reply_markup=markup
             )
 
             user_states[chat_id]['new_position_data'] = step_data
             bot.register_next_step_handler(message, handle_add_position_step)
+
+        elif message.text == "Отмена":
+            if chat_id in user_states:
+                del user_states[chat_id]
+            show_menu(message)
+            return
 
         else:
             bot.send_message(chat_id, "Пожалуйста, выберите один из предложенных вариантов.")
@@ -1933,12 +2025,17 @@ def handle_add_position_step(message):
 
         step_data['non_crit'] = user_input
 
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         bot.send_message(
             chat_id,
             "Введите значение 'Крит'\n"
             "Формат: '24 л.', '234,8 гр.', '6 рук.'\n"
-            "Это число, с которого позиция будет записываться в крит.",
-            reply_markup=types.ReplyKeyboardRemove()
+            "Это число, с которого позиция будет записываться в крит.\n\n"
+            "Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
 
         user_states[chat_id]['new_position_data'] = step_data
@@ -1960,13 +2057,18 @@ def handle_add_position_step(message):
 
         step_data['crit'] = user_input
 
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         # Переходим к описанию
         bot.send_message(
             chat_id,
             "Введите описание для новой позиции\n"
             "Пример оформления: Считаем количество апельсинов в холодильнике. Формат: 0,5 шт., 3 шт., 'стоп'.\n"
-            "Просьба не забывать описывать формат!",
-            reply_markup=types.ReplyKeyboardRemove()
+            "Просьба не забывать описывать формат!\n\n"
+            "Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
 
         user_states[chat_id]['new_position_data'] = step_data
@@ -2026,11 +2128,16 @@ def handle_add_position_final(message):
         user_states[chat_id]['new_position_data'] = {}
         user_states[chat_id]['state'] = 'manage_positions_add_position'
 
+        markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+        btn_cancel = types.KeyboardButton("Отмена")
+        markup.add(btn_cancel)
+
         bot.send_message(
             chat_id,
             "Начинаем процесс заполнения заново.\n\n"
-            "Какую строку займёт позиция?",
-            reply_markup=types.ReplyKeyboardRemove()
+            "Какую строку займёт позиция?\n\n"
+            "Или нажмите 'Отмена' для возврата.",
+            reply_markup=markup
         )
         bot.register_next_step_handler(message, handle_add_position_step)
         return
